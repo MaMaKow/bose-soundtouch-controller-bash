@@ -1,0 +1,84 @@
+This has been taken from:
+https://community.bose.com/t5/SoundTouch-Archive/Alarm-Clock-function-via-Raspberry-Pi/td-p/44575
+
+
+
+Alarm Clock function via Raspberry Pi
+ Deskyeti
+ Deskyeti  Friendly Fanatic
+‎03-24-2017 01:07 PM
+Alarm Clock function via Raspberry Pi  
+I was as suprised as everyone else to discover the SoundTouch does not have an alarm function. It looks like people have been asking for this for ages and several people have baked their own solution. I had a poke around the API and I found that a few simple commands can be used to create a working alarm clock.
+You need a little bit of UNIX skill but only very basic stuff to get this working on a Raspberry Pi (or any other system you have up & running all the time).
+ 
+Create a BASH script form the code below, mine is called stWake.sh and I stored it in the /home/pi directory - I've tried to make it easy to understand by adding lots of comments, the actual script is only a few lines long.......
+ 
+#!/bin/bash
+# Script to turn on the SoundTouch speaker
+# Set volume to level 1 (don't want to deafen anyone)
+# Set to play BBC Radio 5 Live
+# Increase the volume in steps up to desired level
+if [ "$1" = "" ]; then
+echo "parameter1 is device IP address minus the port number"
+echo "parameter2 is target volume level between 1 and 100 - 100 is VERY LOUD"
+echo "parameter3 is the time value for the volume ramp up"
+exit
+fi
+if [ "$2" = "" ]; then
+echo "parameter2 is target volume"
+exit
+fi
+if [ "$3" = "" ]; then
+echo "Parameter3 is the time value"
+exit
+fi
+# SoundTouch listens on port 8090, set the host URL based on P1 + the port number
+host=$1:8090
+# Zero the volume level in the counter
+vol=0
+# Target volume is P2
+targetvol=$2
+# time between volume increase commands - this can be whole number or fractions e.g. .5 or .2
+rampup=$3
+# Set the volume to 1 in case someone left the speaker turned up loud
+curl --request POST --header "Content-Type: application/xml" --data ' <volume>1</volume> ' $host/volume
+# Set the station you wish to listen to - I have BBC Radio 5 Live
+# If you want to use a different station, set the speaker playing the required station and then#
+# from a browser enter the following HTTP://your.speaker.ip.address:8090/playing_now
+# This will return full details of the station. You only need the location and the itemName fields.
+# Replace this in the command below to set your own station choice.
+curl --request POST --header "Content-Type: application/xml" --data ' <ContentItem source="INTERNET_RADIO" sourceAccount="" location="76505"> <itemName>BBC Radio 5 Live - UK Only</itemName></ContentItem> ' $host/select
+# Wait for 2 seconds while the station starts to play
+sleep 2
+# This loop uses the input parameters P2 - targetvol & P3 - rampup to gradually increase the volume to the desired level.
+# I have found a delay of .2 works quite well and for me a target of 25 is good on my ST10 speaker
+until [ $vol -ge $targetvol ]; do
+let vol+=1
+curl --request POST --header "Content-Type: application/xml" --data " <volume>$vol</volume> " $host/volume
+sleep $rampup
+echo volume $vol
+done
+#==============================End of Script==========================
+ 
+Remember to set the script as executable (CHMOD +x stWake.sh)
+ 
+The script takes three parameters - the IP address of your chosen speaker, the target volume you want it to go up to and finally a delay which controls the speed of the rampup which can be in seconds or fractions of seconds (e.g. .5 or .2) 
+ 
+Create a CRON job at your chosen time and day(s) with the settings 
+20 6 * * 1-5 /home/pi/stWake.sh your.speaker.ip.address 25 .2
+ 
+This will fire the alarm at 06:20 Monday to Friday and will turn on the speaker to the selected station and gradually ramp up the volume to your chosen level.
+ 
+Create another CRON job to turn it off with this script:-
+ 
+#!/bin/bash
+#Parameter 1 is the IP addres
+if [ "$1" = "" ]; then
+echo "Parameter1 is the IP Address of your speaker"
+exit
+fi
+host=$1:8090
+curl --request POST --header "Content-Type: application/xml" --data ' <key state="press" sender="Gabbo">POWER</key> ' http://$host/key
+#==============================End of Script==========================
+ 
+I called this on stShutdown.sh and it is called with a single parameter which is the IP address of your chosen speaker - /home/pi/stShutdown.sh your.speaker.ip.address
